@@ -4,6 +4,7 @@ import numpy.linalg as la
 import scipy.sparse as sp
 from numpy.linalg import solve
 from scipy.sparse.linalg import svds
+from sklearn.metrics import mean_squared_error
 
 
 class ExplicitMF:
@@ -100,7 +101,7 @@ class ExplicitMF:
     def train(self, n_iter=10, learning_rate=0.1):
         """ Train model for n_iter iterations from scratch."""
         # initialize latent vectors
-        self.user_vecs = np.random.normal(scale=1. / self.n_factors, \
+        self.user_vecs = np.random.normal(scale=1. / self.n_factors,
                                           size=(self.n_users, self.n_factors))
         self.item_vecs = np.random.normal(scale=1. / self.n_factors,
                                           size=(self.n_items, self.n_factors))
@@ -202,8 +203,7 @@ class ExplicitMF:
         iter_diff = 0
         for (i, n_iter) in enumerate(iter_array):
             if self._v:
-                print
-                'Iteration: {}'.format(n_iter)
+                print(f"iteration: {n_iter}")
             if i == 0:
                 self.train(n_iter - iter_diff, learning_rate)
             else:
@@ -214,8 +214,13 @@ class ExplicitMF:
             self.train_mse += [get_mse(predictions, self.ratings)]
             self.test_mse += [get_mse(predictions, test)]
             if self._v:
-                print
-                'Train mse: ' + str(self.train_mse[-1])
-                print
-                'Test mse: ' + str(self.test_mse[-1])
+                print(f"Train mse: {str(self.train_mse[-1])}")
+                print(f"Test mse: {str(self.test_mse[-1])}")
             iter_diff = n_iter
+
+
+def get_mse(pred, actual):
+    # Ignore nonzero terms.
+    pred = pred[actual.nonzero()].flatten()
+    actual = actual[actual.nonzero()].flatten()
+    return mean_squared_error(pred, actual)
