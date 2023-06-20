@@ -130,7 +130,7 @@ class ExplicitMF:
         """
         np.random.seed(0)
         for i in range(n_iter):
-            print(i)
+            # print(i)
             if self.learning == 'als':
                 self.user_vecs = self.als_step(self.user_vecs,
                                                self.item_vecs,
@@ -229,7 +229,7 @@ class ExplicitMF:
                 print(f"Test mse: {str(self.test_mse[-1])}")
             iter_diff = n_iter
 
-    def fetch_mse(self, test, num_iter=2):
+    def fetch_mse(self, test, num_iter=20):
         self.train(num_iter, learning_rate=self.learning_rate)
         predictions = self.predict_all()
         self.train_mse = get_mse(predictions, self.ratings)

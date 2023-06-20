@@ -74,7 +74,7 @@ def main():
     # regulerization = [0.01]
     # learning_rates = [1e-2]
     # K_list = [50]
-    hyperparams_dict = {(reg, rate, k): None for reg in regulerization for rate in learning_rates for k in K_list}
+    hyperparams_dict = {(reg, rate, k): None for reg in regulerization[::-1] for rate in learning_rates for k in K_list}
     for i,key in enumerate(hyperparams_dict.keys()):
         print(f"starting test {i} out of {len(hyperparams_dict.keys())}")
         reg = key[0]
