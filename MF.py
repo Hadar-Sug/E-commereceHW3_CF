@@ -10,13 +10,16 @@ from sklearn.metrics import mean_squared_error
 class ExplicitMF:
     def __init__(self,
                  ratings,
+                 global_bias,
+                 learning_rate,
                  n_factors=40,
                  learning='sgd',
                  item_fact_reg=0.0,
                  user_fact_reg=0.0,
                  item_bias_reg=0.0,
                  user_bias_reg=0.0,
-                 verbose=False):
+                 verbose=True):
+
         """
         Train a matrix factorization model to predict empty
         entries in a matrix. The terminology assumes a
@@ -52,10 +55,10 @@ class ExplicitMF:
         self.test_mse = None
         self.train_mse = None
         self.training_indices = None
-        self.global_bias = None
+        self.global_bias = global_bias
         self.item_bias = None
         self.user_bias = None
-        self.learning_rate = None
+        self.learning_rate = learning_rate
         self.item_vecs = None
         self.user_vecs = None
         self.ratings = ratings
@@ -70,6 +73,7 @@ class ExplicitMF:
             self.sample_row, self.sample_col = self.ratings.nonzero()
             self.n_samples = len(self.sample_row)
         self._v = verbose
+        np.random.seed(0)
 
     # TODO replace with working version
     def als_step(self,
@@ -84,18 +88,20 @@ class ExplicitMF:
         """
         if type == 'user':
             # Precompute
-            YTY = fixed_vecs.T.dot(fixed_vecs)
-            lambdaI = np.eye(YTY.shape[0]) * _lambda
+            QTQ = fixed_vecs.T.dot(fixed_vecs)
+            lambdaI = np.eye(QTQ.shape[0]) * _lambda
 
             for u in range(latent_vectors.shape[0]):
-                latent_vectors[u, :] = solve((YTY + lambdaI), ratings[u, :].dot(fixed_vecs))
+                latent_vectors[u, :] = (la.solve((QTQ + lambdaI),
+                                                 (ratings[u, :].dot(fixed_vecs)).transpose())).ravel()
         elif type == 'item':
             # Precompute
-            XTX = fixed_vecs.T.dot(fixed_vecs)
-            lambdaI = np.eye(XTX.shape[0]) * _lambda
+            PTP = fixed_vecs.T.dot(fixed_vecs)
+            lambdaI = np.eye(PTP.shape[0]) * _lambda
 
             for i in range(latent_vectors.shape[0]):
-                latent_vectors[i, :] = solve((XTX + lambdaI), ratings[:, i].T.dot(fixed_vecs))
+                latent_vectors[i, :] = (la.solve((PTP + lambdaI),
+                                                 (ratings[:, i].transpose().dot(fixed_vecs)).transpose())).ravel()
         return latent_vectors
 
     def train(self, n_iter=10, learning_rate=0.1):
@@ -112,7 +118,6 @@ class ExplicitMF:
             self.learning_rate = learning_rate
             self.user_bias = np.zeros(self.n_users)
             self.item_bias = np.zeros(self.n_items)
-            self.global_bias = np.mean(self.ratings[np.where(self.ratings != 0)])
             self.partial_train(n_iter)
 
     def partial_train(self, n_iter):
@@ -120,10 +125,7 @@ class ExplicitMF:
         Train model for n_iter iterations. Can be
         called multiple times for further training.
         """
-        ctr = 1
-        while ctr <= n_iter:
-            if ctr % 10 == 0 and self._v:
-                print(f"current iteration: {ctr}")
+        for i in range(n_iter):
             if self.learning == 'als':
                 self.user_vecs = self.als_step(self.user_vecs,
                                                self.item_vecs,
@@ -139,7 +141,6 @@ class ExplicitMF:
                 self.training_indices = np.arange(self.n_samples)
                 np.random.shuffle(self.training_indices)
                 self.sgd()
-            ctr += 1
 
     def sgd(self):
         for idx in self.training_indices:
@@ -166,7 +167,7 @@ class ExplicitMF:
         elif self.learning == 'sgd':
             prediction = self.global_bias + self.user_bias[u] + self.item_bias[i]
             prediction += self.user_vecs[u, :].dot(self.item_vecs[i, :].T)
-            return prediction
+            return max(prediction, 0)
 
     def predict_all(self):
         """ Predict ratings for every user and item."""
@@ -178,7 +179,7 @@ class ExplicitMF:
 
         return predictions
 
-    def calculate_learning_curve(self, iter_array, test, learning_rate=0.1):
+    def calculate_learning_curve(self, iter_array, test=None, learning_rate=0.1):
         """
         Keep track of MSE as a function of training iterations.
 
@@ -218,9 +219,17 @@ class ExplicitMF:
                 print(f"Test mse: {str(self.test_mse[-1])}")
             iter_diff = n_iter
 
+    def fetch_mse(self, test, num_iter=50):
+        self.train(num_iter, learning_rate=self.learning_rate)
+        predictions = self.predict_all()
+        self.train_mse = get_mse(predictions, self.ratings)
+        self.test_mse = get_mse(predictions, test)
+        return self.train_mse, self.test_mse
+
 
 def get_mse(pred, actual):
     # Ignore nonzero terms.
     pred = pred[actual.nonzero()].flatten()
     actual = actual[actual.nonzero()].flatten()
+    actual = np.array(actual).reshape(pred.shape)
     return mean_squared_error(pred, actual)
