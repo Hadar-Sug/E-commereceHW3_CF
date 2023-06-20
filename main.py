@@ -68,12 +68,12 @@ def create_mat(users_hash, songs_hash, df, shape):
 def main():
     df, train, test = init()
     r_avg = df.iloc[:, 2].mean()
-    regulerization = [0.01, 0.1, 0.2, 0.45]
-    learning_rates = [1e-4, 1e-3, 1e-2, 0.1]
-    K_list = [10, 20, 40, 50]
+    regulerization = [0.01, 0.1, 0.2, 0.33]
+    learning_rates = [1e-3, 1e-2, 0.1]
+    K_list = [20, 50, 100]
     # regulerization = [0.01]
     # learning_rates = [1e-2]
-    # K_list = [60]
+    # K_list = [50]
     hyperparams_dict = {(reg, rate, k): None for reg in regulerization for rate in learning_rates for k in K_list}
     for i,key in enumerate(hyperparams_dict.keys()):
         print(f"starting test {i} out of {len(hyperparams_dict.keys())}")

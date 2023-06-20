@@ -1,3 +1,4 @@
+import random
 import pandas as pd
 import numpy as np
 import numpy.linalg as la
@@ -73,6 +74,7 @@ class ExplicitMF:
             self.sample_row, self.sample_col = self.ratings.nonzero()
             self.n_samples = len(self.sample_row)
         self._v = verbose
+        random.seed(0)
         np.random.seed(0)
 
     # TODO replace with working version
@@ -107,6 +109,7 @@ class ExplicitMF:
     def train(self, n_iter=10, learning_rate=0.1):
         """ Train model for n_iter iterations from scratch."""
         # initialize latent vectors
+        np.random.seed(0)
         self.user_vecs = np.random.normal(scale=1. / self.n_factors,
                                           size=(self.n_users, self.n_factors))
         self.item_vecs = np.random.normal(scale=1. / self.n_factors,
@@ -125,7 +128,9 @@ class ExplicitMF:
         Train model for n_iter iterations. Can be
         called multiple times for further training.
         """
+        np.random.seed(0)
         for i in range(n_iter):
+            print(i)
             if self.learning == 'als':
                 self.user_vecs = self.als_step(self.user_vecs,
                                                self.item_vecs,
@@ -171,13 +176,18 @@ class ExplicitMF:
 
     def predict_all(self):
         """ Predict ratings for every user and item."""
-        predictions = np.zeros((self.user_vecs.shape[0],
-                                self.item_vecs.shape[0]))
-        for u in range(self.user_vecs.shape[0]):
-            for i in range(self.item_vecs.shape[0]):
-                predictions[u, i] = self.predict(u, i)
-
-        return predictions
+        if self.learning == 'als':
+            predictions = np.matmul(self.user_vecs, self.item_vecs.T)
+            return np.maximum(predictions, 0)
+        elif self.learning == 'sgd':
+            global_bias_mat = np.full((self.n_users, self.n_items), self.global_bias)
+            cross_product_mat = np.matmul(self.user_vecs, self.item_vecs.T)
+            user_biases = np.repeat(self.user_bias, self.n_items).reshape(
+                (self.n_users, self.n_items))  # duplicate to rows
+            item_biases = np.tile(self.item_bias, self.n_users).reshape(
+                (self.n_users, self.n_items))  # duplicate to cols
+            predictions = global_bias_mat + user_biases + item_biases + cross_product_mat
+            return np.maximum(predictions, 0)
 
     def calculate_learning_curve(self, iter_array, test=None, learning_rate=0.1):
         """
@@ -219,7 +229,7 @@ class ExplicitMF:
                 print(f"Test mse: {str(self.test_mse[-1])}")
             iter_diff = n_iter
 
-    def fetch_mse(self, test, num_iter=50):
+    def fetch_mse(self, test, num_iter=2):
         self.train(num_iter, learning_rate=self.learning_rate)
         predictions = self.predict_all()
         self.train_mse = get_mse(predictions, self.ratings)
