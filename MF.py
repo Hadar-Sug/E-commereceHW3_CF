@@ -172,7 +172,7 @@ class ExplicitMF:
         elif self.learning == 'sgd':
             prediction = self.global_bias + self.user_bias[u] + self.item_bias[i]
             prediction += self.user_vecs[u, :].dot(self.item_vecs[i, :].T)
-            return max(prediction, 0)
+            return prediction
 
     def predict_all(self):
         """ Predict ratings for every user and item."""
