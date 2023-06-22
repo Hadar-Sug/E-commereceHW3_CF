@@ -34,10 +34,10 @@ def init():
     # print("here")
     # df_art['weight'] = 0
     # df = pd.concat([df, df_art], ignore_index=True)
-    df = pd.read_csv('user_songs_edited.csv')
-    scaler = MinMaxScaler(feature_range=(0, 100))
-    df['weight'] = scaler.fit_transform(df[['weight']])
-    train_df, test_df = train_test_split(df, test_size=0.2)
+    # df = pd.read_csv('user_songs_edited.csv')
+    # scaler = MinMaxScaler(feature_range=(0, 100))
+    # df['weight'] = scaler.fit_transform(df[['weight']])
+    train_df, test_df = train_test_split(train, test_size=0.2)
     num_users = len(all_users)  # Number of users
     num_songs = len(all_songs)
     # create the sparse ratings matrix
@@ -52,7 +52,7 @@ def init():
         songs_hash[song] = j
     train_mat = create_mat(users_hash, songs_hash, train_df, (num_users, num_songs))
     test_mat = create_mat(users_hash, songs_hash, test_df, (num_users, num_songs))
-    return df, train_mat, test_mat
+    return train, train_mat, test_mat
 
 
 def create_mat(users_hash, songs_hash, df, shape):
@@ -68,13 +68,13 @@ def create_mat(users_hash, songs_hash, df, shape):
 def main():
     df, train, test = init()
     r_avg = df.iloc[:, 2].mean()
-    regulerization = [0.01, 0.1, 0.2, 0.33]
+    regularization = [0.01, 0.1, 0.2, 0.33]
     learning_rates = [1e-3, 1e-2, 0.1]
     K_list = [20, 50, 100]
-    # regulerization = [0.01]
+    # regularization = [0.01]
     # learning_rates = [1e-2]
     # K_list = [50]
-    hyperparams_dict = {(reg, rate, k): None for reg in regulerization[::-1] for rate in learning_rates for k in K_list}
+    hyperparams_dict = {(reg, rate, k): None for reg in regularization[::-1] for rate in learning_rates for k in K_list}
     for i,key in enumerate(hyperparams_dict.keys()):
         print(f"starting test {i} out of {len(hyperparams_dict.keys())}")
         reg = key[0]
