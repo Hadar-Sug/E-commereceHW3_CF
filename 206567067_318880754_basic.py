@@ -1,8 +1,8 @@
 import itertools
 
 import numpy as np
-from scipy.sparse import coo_matrix
-from scipy.sparse.linalg import lsqr
+from scipy.sparse import coo_matrix, diags
+from scipy.sparse.linalg import lsqr, svds
 import numpy.linalg as la
 
 
@@ -38,8 +38,6 @@ def als_step(latent_vectors, fixed_vecs, ratings, type='user'):
 
             latent_vectors[i, :] = la.lstsq(mat, clean_r, rcond=None)[0]
     return latent_vectors
-
-
 
 
 class CF:
@@ -165,3 +163,22 @@ class CF:
         self.test_df = self.test_df.drop('predictions', axis=1)
 
     def run_part_3(self):
+        U, S, V = svds(self.true_mat.astype(float), k=20)
+        # Reconstruct the matrix using k singular values/vectors
+        reduced_R = U.dot(diags(S).dot(V))
+        predictions = reduced_R
+        train_indices = list(zip(self.true_rows, self.true_cols))
+        mask = np.zeros(reduced_R.shape, dtype=bool)
+        for entry in train_indices:
+            mask[entry] = True
+        predictions[~mask] = 0
+        score_part3 = get_score(self.true_mat.toarray(), predictions)
+        print(f'SSE in Part 1 on train set: {score_part3}')
+        test_pred_3 = []
+        for idx in self.test_indxs_mapped:
+            user, song = idx[0], idx[1]
+            test_pred_3.append(max(reduced_R[user, song], 0))
+        self.test_df['predictions'] = test_pred_3
+        self.test_df.to_csv('206567067_318880754_task3.csv', index=False)
+        self.test_df = self.test_df.drop('predictions', axis=1)
+
