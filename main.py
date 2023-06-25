@@ -198,6 +198,9 @@ class CF:
         self.test_df = self.test_df.drop('predictions', axis=1)
 
     def run_part_4_cross_validation(self, k, _lambda, n_iters):
+        # k: Number of latent factors
+        # _lambda: Regularization parameter
+        # n_iters: Number of iterations
         cross_validation = KFold(n_splits=5)
         for train_idx, test_idx in cross_validation.split(self.train_df):
             train_df, test_df = self.train_df.iloc[train_idx], self.train_df.iloc[test_idx]
@@ -210,6 +213,9 @@ class CF:
             model.calculate_learning_curve(np.arange(1, n_iters, step=5), test_mat)
 
     def run_part_4_hyperparams(self, lambdas, Ks, check_points):
+        # lambdas: List of regularization parameters to test
+        # Ks: List of numbers of latent factors to test
+        # check_points: List of iteration checkpoints for calculating the learning curve
         train_df, test_df = train_test_split(self.test_df, test_size=0.2)
         r_avg = train_df.iloc[:, 2].mean()
         train_mat = create_mat(self.users_hash, self.songs_hash, train_df,
