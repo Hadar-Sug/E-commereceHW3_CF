@@ -35,9 +35,10 @@ def init():
     # df_art['weight'] = 0
     # df = pd.concat([df, df_art], ignore_index=True)
     # df = pd.read_csv('user_songs_edited.csv')
-    # scaler = MinMaxScaler(feature_range=(0, 100))
-    # df['weight'] = scaler.fit_transform(df[['weight']])
+    scaler = MinMaxScaler(feature_range=(0, 10))
+    train['weight'] = scaler.fit_transform(train[['weight']])
     train_df, test_df = train_test_split(train, test_size=0.2)
+    r_avg = train_df.iloc[:, 2].mean()
     num_users = len(all_users)  # Number of users
     num_songs = len(all_songs)
     # create the sparse ratings matrix
@@ -52,7 +53,7 @@ def init():
         songs_hash[song] = j
     train_mat = create_mat(users_hash, songs_hash, train_df, (num_users, num_songs))
     test_mat = create_mat(users_hash, songs_hash, test_df, (num_users, num_songs))
-    return train, train_mat, test_mat
+    return train, train_mat, test_mat, r_avg, scaler
 
 
 def create_mat(users_hash, songs_hash, df, shape):
@@ -66,29 +67,28 @@ def create_mat(users_hash, songs_hash, df, shape):
 
 
 def main():
-    df, train, test = init()
+    np.random.seed(0)
+    df, train, test, r_avg, scaler = init()
     r_avg = df.iloc[:, 2].mean()
-    regularization = [0.01, 0.1, 0.2, 0.33]
-    learning_rates = [1e-3, 1e-2, 0.1]
-    K_list = [20, 50, 100]
-    # regularization = [0.01]
-    # learning_rates = [1e-2]
-    # K_list = [50]
+    regularization = [0.2]  # best train params: (0.01, 0.03, 20)
+    learning_rates = [0.02]  # best test params: (0.33, 0.03, 20)
+    K_list = [100]
     hyperparams_dict = {(reg, rate, k): None for reg in regularization[::-1] for rate in learning_rates for k in K_list}
-    for i,key in enumerate(hyperparams_dict.keys()):
-        print(f"starting test {i} out of {len(hyperparams_dict.keys())}")
+    for i, key in enumerate(hyperparams_dict.keys()):
+        print(f"starting test {i+1} out of {len(hyperparams_dict.keys())}")
         reg = key[0]
         rate = key[1]
         k = key[2]
         SGD = ExplicitMF(ratings=train, global_bias=r_avg, n_factors=k, learning='sgd', user_fact_reg=reg, \
                          user_bias_reg=reg,
-                         item_fact_reg=reg, item_bias_reg=reg, learning_rate=rate)
-        hyperparams_dict[key] = SGD.fetch_mse(test)
-        print(key, hyperparams_dict[key])
-    best_train = min(hyperparams_dict, key=lambda k: hyperparams_dict[k][0])
-    best_test = min(hyperparams_dict, key=lambda k: hyperparams_dict[k][1])
-    print(f"best train params: {best_train}\n best test params: {best_test}")
-    print(hyperparams_dict)
+                         item_fact_reg=reg, item_bias_reg=reg, learning_rate=rate, scaler=scaler)
+        SGD.calculate_learning_curve([1, 2, 5, 10, 20, 50, 100], test, learning_rate=rate)
+    #     hyperparams_dict[key] = SGD.fetch_rmse(test, scaler =scaler)
+    #     print(key, hyperparams_dict[key])
+    # best_train = min(hyperparams_dict, key=lambda k: hyperparams_dict[k][0])
+    # best_test = min(hyperparams_dict, key=lambda k: hyperparams_dict[k][1])
+    # print(f"best train params: {best_train}\n best test params: {best_test}")
+    # print(hyperparams_dict)
 
 
 if __name__ == "__main__":

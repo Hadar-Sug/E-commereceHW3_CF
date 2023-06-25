@@ -6,6 +6,7 @@ import scipy.sparse as sp
 from numpy.linalg import solve
 from scipy.sparse.linalg import svds
 from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import MinMaxScaler
 
 
 class ExplicitMF:
@@ -13,6 +14,7 @@ class ExplicitMF:
                  ratings,
                  global_bias,
                  learning_rate,
+                 scaler,
                  n_factors=40,
                  learning='sgd',
                  item_fact_reg=0.0,
@@ -53,6 +55,7 @@ class ExplicitMF:
         verbose : (bool)
             Whether or not to printout training progress
         """
+        self.scaler = scaler
         self.test_mse = None
         self.train_mse = None
         self.training_indices = None
@@ -110,10 +113,8 @@ class ExplicitMF:
         """ Train model for n_iter iterations from scratch."""
         # initialize latent vectors
         np.random.seed(0)
-        self.user_vecs = np.random.normal(scale=1. / self.n_factors,
-                                          size=(self.n_users, self.n_factors))
-        self.item_vecs = np.random.normal(scale=1. / self.n_factors,
-                                          size=(self.n_items, self.n_factors))
+        self.user_vecs = np.random.random((self.n_users, self.n_factors)).astype(np.longdouble)
+        self.item_vecs = np.random.random((self.n_items, self.n_factors)).astype(np.longdouble)
 
         if self.learning == 'als':
             self.partial_train(n_iter)
@@ -148,22 +149,23 @@ class ExplicitMF:
                 self.sgd()
 
     def sgd(self):
-        for idx in self.training_indices:
+        for m, idx in enumerate(self.training_indices):
+            # if m <= 6:
+            #     print(idx)
             u = self.sample_row[idx]
             i = self.sample_col[idx]
             prediction = self.predict(u, i)
             e = (self.ratings[u, i] - prediction)  # error
-
             # Update biases
+
             self.user_bias[u] += self.learning_rate * (e - self.user_bias_reg * self.user_bias[u])
 
             self.item_bias[i] += self.learning_rate * (e - self.item_bias_reg * self.item_bias[i])
-
             # Update latent factors
             self.user_vecs[u, :] += self.learning_rate * \
-                                    (e * self.item_vecs[i, :] - self.user_fact_reg * self.user_vecs[u, :])
-            self.item_vecs[i, :] += self.learning_rate * \
-                                    (e * self.user_vecs[u, :] - self.item_fact_reg * self.item_vecs[i, :])
+                                    (e * self.item_vecs[i, :] - self.user_bias_reg * self.user_vecs[u, :])
+            self.item_vecs[i, :] += self.learning_rate * (
+                    e * self.user_vecs[u, :] - self.item_fact_reg * self.item_vecs[i, :])
 
     def predict(self, u, i):
         """ Single user and item prediction."""
@@ -172,7 +174,7 @@ class ExplicitMF:
         elif self.learning == 'sgd':
             prediction = self.global_bias + self.user_bias[u] + self.item_bias[i]
             prediction += self.user_vecs[u, :].dot(self.item_vecs[i, :].T)
-            return prediction
+            return max(0, prediction)
 
     def predict_all(self):
         """ Predict ratings for every user and item."""
@@ -222,24 +224,26 @@ class ExplicitMF:
 
             predictions = self.predict_all()
 
-            self.train_mse += [get_mse(predictions, self.ratings)]
-            self.test_mse += [get_mse(predictions, test)]
+            self.train_mse += [get_rmse(predictions, self.ratings, self.scaler)]
+            self.test_mse += [get_rmse(predictions, test, self.scaler)]
             if self._v:
-                print(f"Train mse: {str(self.train_mse[-1])}")
-                print(f"Test mse: {str(self.test_mse[-1])}")
+                print(f"Train rmse: {str(self.train_mse[-1])}")
+                print(f"Test rmse: {str(self.test_mse[-1])}")
             iter_diff = n_iter
 
-    def fetch_mse(self, test, num_iter=20):
+    def fetch_rmse(self, test, scaler, num_iter=200):
         self.train(num_iter, learning_rate=self.learning_rate)
         predictions = self.predict_all()
-        self.train_mse = get_mse(predictions, self.ratings)
-        self.test_mse = get_mse(predictions, test)
+        self.train_mse = get_rmse(predictions, self.ratings, scaler)
+        self.test_mse = get_rmse(predictions, test, scaler)
         return self.train_mse, self.test_mse
 
 
-def get_mse(pred, actual):
+def get_rmse(pred, actual, scaler):
     # Ignore nonzero terms.
     pred = pred[actual.nonzero()].flatten()
     actual = actual[actual.nonzero()].flatten()
     actual = np.array(actual).reshape(pred.shape)
-    return mean_squared_error(pred, actual)
+    pred = scaler.inverse_transform(pred.reshape(-1, 1))
+    actual = scaler.inverse_transform(actual.reshape(-1, 1))
+    return mean_squared_error(pred, actual) ** 0.5
