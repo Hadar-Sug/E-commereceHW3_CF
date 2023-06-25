@@ -7,16 +7,17 @@ from numpy.linalg import solve
 from scipy.sparse.linalg import svds
 from sklearn.metrics import mean_squared_error
 from sklearn.preprocessing import MinMaxScaler
+from scipy.optimize import minimize
 
 
 class ExplicitMF:
     def __init__(self,
                  ratings,
                  global_bias,
-                 learning_rate,
                  scaler,
                  n_factors=40,
                  learning='sgd',
+                 learning_rate=0.0,
                  item_fact_reg=0.0,
                  user_fact_reg=0.0,
                  item_bias_reg=0.0,
@@ -80,41 +81,47 @@ class ExplicitMF:
         random.seed(0)
         np.random.seed(0)
 
+    # Define the objective function
+
     # TODO replace with working version
-    def als_step(self,
-                 latent_vectors,
-                 fixed_vecs,
-                 ratings,
-                 _lambda,
-                 type='user'):
+    def als_step(self, latent_vectors, fixed_vecs, ratings, _lambda, type='user'):
         """
         One of the two ALS steps. Solve for the latent vectors
         specified by type.
         """
         if type == 'user':
-            # Precompute
-            QTQ = fixed_vecs.T.dot(fixed_vecs)
-            lambdaI = np.eye(QTQ.shape[0]) * _lambda
-
-            for u in range(latent_vectors.shape[0]):
-                latent_vectors[u, :] = (la.solve((QTQ + lambdaI),
-                                                 (ratings[u, :].dot(fixed_vecs)).transpose())).ravel()
+            # calculating P, Q is fixed
+            for u in range(latent_vectors.shape[0]):  # iterate over P rows and R Rows
+                r = ratings[u, :].flatten()
+                rows_to_remove = np.where(r == 0)[0]
+                clean_r = np.delete(r, rows_to_remove)
+                mat = np.delete(fixed_vecs, rows_to_remove, axis=0)
+                lambda_mat = _lambda * np.eye(self.n_factors)
+                zeros = np.zeros(shape=self.n_factors)
+                mat = np.vstack((mat, lambda_mat))
+                b = np.hstack((clean_r, zeros)).flatten()
+                latent_vectors[u, :] = la.lstsq(mat, b, rcond=None)[0]
         elif type == 'item':
-            # Precompute
-            PTP = fixed_vecs.T.dot(fixed_vecs)
-            lambdaI = np.eye(PTP.shape[0]) * _lambda
-
+            # calculating Q, P is fixed
             for i in range(latent_vectors.shape[0]):
-                latent_vectors[i, :] = (la.solve((PTP + lambdaI),
-                                                 (ratings[:, i].transpose().dot(fixed_vecs)).transpose())).ravel()
+                # remove rows from
+                r = ratings[:, i].flatten()
+                rows_to_remove = np.where(r == 0)[0]
+                clean_r = np.delete(r, rows_to_remove)
+                mat = np.delete(fixed_vecs, rows_to_remove, axis=0)
+                lambda_mat = _lambda * np.eye(self.n_factors)
+                zeros = np.zeros(shape=self.n_factors)
+                mat = np.vstack((mat, lambda_mat))
+                b = np.hstack((clean_r, zeros)).flatten()
+                latent_vectors[i, :] = la.lstsq(mat, b, rcond=None)[0]
         return latent_vectors
 
     def train(self, n_iter=10, learning_rate=0.1):
         """ Train model for n_iter iterations from scratch."""
         # initialize latent vectors
         np.random.seed(0)
-        self.user_vecs = np.random.random((self.n_users, self.n_factors)).astype(np.longdouble)
-        self.item_vecs = np.random.random((self.n_items, self.n_factors)).astype(np.longdouble)
+        self.user_vecs = np.random.randn(self.n_users, self.n_factors)
+        self.item_vecs = np.zeros((self.n_items, self.n_factors))
 
         if self.learning == 'als':
             self.partial_train(n_iter)
@@ -131,18 +138,17 @@ class ExplicitMF:
         """
         np.random.seed(0)
         for i in range(n_iter):
-            # print(i)
             if self.learning == 'als':
-                self.user_vecs = self.als_step(self.user_vecs,
-                                               self.item_vecs,
-                                               self.ratings,
-                                               self.user_fact_reg,
-                                               type='user')
                 self.item_vecs = self.als_step(self.item_vecs,
                                                self.user_vecs,
                                                self.ratings,
                                                self.item_fact_reg,
                                                type='item')
+                self.user_vecs = self.als_step(self.user_vecs,
+                                               self.item_vecs,
+                                               self.ratings,
+                                               self.user_fact_reg,
+                                               type='user')
             elif self.learning == 'sgd':
                 self.training_indices = np.arange(self.n_samples)
                 np.random.shuffle(self.training_indices)
@@ -244,6 +250,6 @@ def get_rmse(pred, actual, scaler):
     pred = pred[actual.nonzero()].flatten()
     actual = actual[actual.nonzero()].flatten()
     actual = np.array(actual).reshape(pred.shape)
-    pred = scaler.inverse_transform(pred.reshape(-1, 1))
-    actual = scaler.inverse_transform(actual.reshape(-1, 1))
+    # pred = scaler.inverse_transform(pred.reshape(-1, 1))
+    # actual = scaler.inverse_transform(actual.reshape(-1, 1))
     return mean_squared_error(pred, actual) ** 0.5
