@@ -89,6 +89,8 @@ class ExplicitMF:
         One of the two ALS steps. Solve for the latent vectors
         specified by type.
         """
+        lambda_mat = _lambda * np.eye(self.n_factors)
+        zeros = np.zeros(shape=self.n_factors)
         if type == 'user':
             # calculating P, Q is fixed
             for u in range(latent_vectors.shape[0]):  # iterate over P rows and R Rows
@@ -96,8 +98,6 @@ class ExplicitMF:
                 rows_to_remove = np.where(r == 0)[0]
                 clean_r = np.delete(r, rows_to_remove)
                 mat = np.delete(fixed_vecs, rows_to_remove, axis=0)
-                lambda_mat = _lambda * np.eye(self.n_factors)
-                zeros = np.zeros(shape=self.n_factors)
                 mat = np.vstack((mat, lambda_mat))
                 b = np.hstack((clean_r, zeros)).flatten()
                 latent_vectors[u, :] = la.lstsq(mat, b, rcond=None)[0]
@@ -109,8 +109,6 @@ class ExplicitMF:
                 rows_to_remove = np.where(r == 0)[0]
                 clean_r = np.delete(r, rows_to_remove)
                 mat = np.delete(fixed_vecs, rows_to_remove, axis=0)
-                lambda_mat = _lambda * np.eye(self.n_factors)
-                zeros = np.zeros(shape=self.n_factors)
                 mat = np.vstack((mat, lambda_mat))
                 b = np.hstack((clean_r, zeros)).flatten()
                 latent_vectors[i, :] = la.lstsq(mat, b, rcond=None)[0]
@@ -197,7 +195,7 @@ class ExplicitMF:
             predictions = global_bias_mat + user_biases + item_biases + cross_product_mat
             return np.maximum(predictions, 0)
 
-    def calculate_learning_curve(self, iter_array, test=None, learning_rate=0.1):
+    def calculate_learning_curve(self, iter_array, test=None, learning_rate=0.1,**kwargs):
         """
         Keep track of MSE as a function of training iterations.
 
@@ -220,8 +218,10 @@ class ExplicitMF:
         self.train_mse = []
         self.test_mse = []
         iter_diff = 0
+        # logger = kwargs['logger']
         for (i, n_iter) in enumerate(iter_array):
             if self._v:
+                # logger.info(f"iteration: {n_iter}")
                 print(f"iteration: {n_iter}")
             if i == 0:
                 self.train(n_iter - iter_diff, learning_rate)
@@ -233,6 +233,9 @@ class ExplicitMF:
             self.train_mse += [get_rmse(predictions, self.ratings, self.scaler)]
             self.test_mse += [get_rmse(predictions, test, self.scaler)]
             if self._v:
+
+                # logger.info(f"Train rmse: {str(self.train_mse[-1])}")
+                # logger.info(f"Test rmse: {str(self.test_mse[-1])}")
                 print(f"Train rmse: {str(self.train_mse[-1])}")
                 print(f"Test rmse: {str(self.test_mse[-1])}")
             iter_diff = n_iter

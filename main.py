@@ -1,3 +1,6 @@
+import time
+
+from matplotlib import pyplot as plt
 from scipy.sparse import coo_matrix
 
 import MF
@@ -13,6 +16,7 @@ import itertools
 from scipy.sparse import coo_matrix, diags
 from scipy.sparse.linalg import lsqr, svds
 from sklearn.model_selection import KFold
+import logging
 
 
 def get_score(true, pred, arr_type='np'):
@@ -197,12 +201,14 @@ class CF:
         self.test_df.to_csv('206567067_318880754_task3.csv', index=False)
         self.test_df = self.test_df.drop('predictions', axis=1)
 
-    def run_part_4_cross_validation(self, k, _lambda, n_iters):
+    def run_part_4_cross_validation(self, k, _lambda, n_iters, splits=5, **kwargs):
         # k: Number of latent factors
         # _lambda: Regularization parameter
         # n_iters: Number of iterations
-        cross_validation = KFold(n_splits=5)
-        for train_idx, test_idx in cross_validation.split(self.train_df):
+        cross_validation = KFold(n_splits=splits)
+        scores = []
+        logger = kwargs['logger']
+        for fold, (train_idx, test_idx) in enumerate(cross_validation.split(self.train_df)):
             train_df, test_df = self.train_df.iloc[train_idx], self.train_df.iloc[test_idx]
             train_mat = create_mat(self.users_hash, self.songs_hash, train_df,
                                    (self.num_users, self.num_songs)).toarray()
@@ -210,35 +216,93 @@ class CF:
             r_avg = train_df.iloc[:, 2].mean()
             model = MF.ExplicitMF(train_mat, global_bias=r_avg, scaler=None, n_factors=k, learning='als'
                                   , item_bias_reg=-_lambda, user_bias_reg=_lambda)
-            model.calculate_learning_curve(np.arange(1, n_iters, step=5), test_mat)
+            score = model.fetch_rmse(test_mat, scaler=None, num_iter=n_iters)[1]
+            scores.append(score)
+            logger.info(f'fold {fold}/{splits} with (k:{k}, lambda:{_lambda}): {score:.3f}')
+        logger.info(f'all {splits} folds avg, n_iters:{n_iters} with (k:{k}, lambda:{_lambda}): {np.average(scores):.3f}')
 
     def run_part_4_hyperparams(self, lambdas, Ks, check_points):
         # lambdas: List of regularization parameters to test
         # Ks: List of numbers of latent factors to test
         # check_points: List of iteration checkpoints for calculating the learning curve
-        train_df, test_df = train_test_split(self.test_df, test_size=0.2)
+        logger = logging.getLogger(__name__)
+        file_handler = logging.FileHandler('logfile.txt')
+        train_df, test_df = train_test_split(self.train_df, test_size=0.2)
         r_avg = train_df.iloc[:, 2].mean()
         train_mat = create_mat(self.users_hash, self.songs_hash, train_df,
                                (self.num_users, self.num_songs)).toarray()
         test_mat = create_mat(self.users_hash, self.songs_hash, test_df, (self.num_users, self.num_songs)).toarray()
         hyperparams_dict = {(reg, k): None for reg in lambdas for k in Ks}
         for i, key in enumerate(hyperparams_dict.keys()):
-            print(f"starting test {i + 1} out of {len(hyperparams_dict.keys())}")
-            print(f"hyperparams: {key}")
+            logger.info(f"Starting test {i + 1} out of {len(hyperparams_dict.keys())}")
+            logger.info(f"Hyperparams: {key}")
+            # print(f"starting test {i + 1} out of {len(hyperparams_dict.keys())}")
+            # print(f"hyperparams: {key}")
             reg = key[0]
             k = key[1]
             model = MF.ExplicitMF(ratings=train_mat, global_bias=r_avg, scaler=None, n_factors=k, learning='als'
                                   , item_bias_reg=reg, user_bias_reg=reg)
-            model.calculate_learning_curve(iter_array=check_points, test=test_mat)
+            start_time = time.time()
+            model.calculate_learning_curve(iter_array=check_points, test=test_mat, logger=logger)
+
+    def run_part_4_hyperparams_cross_validation(self, lambdas, Ks, check_points):
+        # lambdas: List of regularization parameters to test
+        # Ks: List of numbers of latent factors to test
+        # check_points: List of iteration checkpoints for calculating the learning curve
+        # train_df, test_df = train_test_split(self.test_df, test_size=0.2)
+        hyperparams_dict = {(reg, k): None for reg in lambdas for k in Ks}
+        for i, key in enumerate(hyperparams_dict.keys()):
+            print(f"starting test {i + 1} out of {len(hyperparams_dict.keys())}")
+            print(f"hyperparams: {key}")
+            train_scores = []
+            test_scores = []
+            cross_validation = KFold(n_splits=5)
+            for fold, (train_idx, test_idx) in enumerate(cross_validation.split(self.train_df)):
+                print(f'starting {fold + 1}/5 fold')
+                train_df, test_df = self.train_df.iloc[train_idx], self.train_df.iloc[test_idx]
+                r_avg = train_df.iloc[:, 2].mean()
+                train_mat = create_mat(self.users_hash, self.songs_hash, train_df,
+                                       (self.num_users, self.num_songs)).toarray()
+                test_mat = create_mat(self.users_hash, self.songs_hash, test_df,
+                                      (self.num_users, self.num_songs)).toarray()
+                model = MF.ExplicitMF(ratings=train_mat, global_bias=r_avg, scaler=None, n_factors=key[1],
+                                      learning='als'
+                                      , item_bias_reg=key[0], user_bias_reg=key[0])
+                model.calculate_learning_curve(iter_array=check_points, test=test_mat)
+                train_scores.append(model.train_mse)
+                test_scores.append(model.test_mse)
+            train_array = np.array(train_scores)
+            averages_train = np.mean(train_array, axis=0).tolist()
+            test_array = np.array(test_scores)
+            averages_test = np.mean(test_array, axis=0).tolist()
+            df_scores = pd.DataFrame(data={"train": averages_train, "test": averages_test}, index=check_points)
+            print(df_scores.T)
+            plt.plot(check_points, averages_train, label='train')
+            plt.plot(check_points, averages_test, label='test')
+            plt.title(f'Train&Test scores with hyperparams: {key}')
+            plt.xlabel('ALS iterations')
+            plt.ylabel('RMSE')
+            plt.legend()
+            plt.show()
 
 
 def main(q=4):
     if q == 4:
         part4 = CF(pd.read_csv('user_song.csv'), pd.read_csv('test.csv'))
-        regularization = np.arange(start=0.01, stop=0.5, step=0.05)
-        K_list = np.arange(start=20, stop=60, step=5)
-        checkpoints = [1, 2, 5, 10, 20, 50]
-        part4.run_part_4_hyperparams(lambdas=regularization, Ks=K_list, check_points=checkpoints)
+        regularization = np.arange(start=0.6, stop=0.7, step=0.05)
+        K_list = np.arange(start=55, stop=75, step=20)
+        checkpoints = np.arange(start=5, stop=20, step=5)
+        logger = logging.getLogger(__name__)
+        logger.setLevel(logging.INFO)
+        file_handler = logging.FileHandler('cross_validation_logfile.txt')
+        console_handler = logging.StreamHandler()
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
+        hyperparams_dict = {(reg, k): None for reg in regularization for k in K_list}
+        for key in hyperparams_dict.keys():
+            reg, k = key[0], key[1]
+            part4.run_part_4_cross_validation(k=k, _lambda=reg, n_iters=50, splits=5, logger=logger)
+        # part4.run_part_4_hyperparams_cross_validation(lambdas=regularization, Ks=K_list, check_points=checkpoints)
     else:
         part1_2_3 = CF(pd.read_csv('user_song.csv'), pd.read_csv('test.csv'))
         part1_2_3.run_part_1()
